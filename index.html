@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gradient Uncertainty Calculator</title>
+    <link rel="stylesheet" href="https://pyscript.net/releases/2023.11.1/core.css" />
+    <script type="module" src="https://pyscript.net/releases/2023.11.1/core.js"></script>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; max-width: 800px; margin: auto; line-height: 1.6; }
+        .form-group { margin-bottom: 15px; }
+        label { display: block; font-weight: bold; margin-bottom: 5px; }
+        input[type="text"], input[type="number"] { width: 100%; padding: 8px; box-sizing: border-box; }
+        button { padding: 10px 20px; background-color: #0366d6; color: white; border: none; cursor: pointer; font-size: 16px; border-radius: 5px; }
+        button:hover { background-color: #0056b3; }
+        #output { margin-top: 20px; padding: 15px; background: #f6f8fa; border: 1px solid #d1d5da; white-space: pre-wrap; font-family: monospace; min-height: 100px;}
+        .warning { color: #d73a49; font-weight: bold; }
+    </style>
+</head>
+<body>
+
+    <h2>Gradient Uncertainty Calculator</h2>
+    <p>Enter your lists of numbers separated by commas.</p>
+    
+    <div class="form-group">
+        <label>X Points:</label>
+        <input type="text" id="x_points" value="90, 85, 80, 75, 70, 65, 60, 55">
+    </div>
+    <div class="form-group">
+        <label>Y Points:</label>
+        <input type="text" id="y_points" value="0.107, 0.105, 0.103, 0.1015, 0.1, 0.098, 0.0965, 0.0945">
+    </div>
+    <div class="form-group">
+        <label>X Error:</label>
+        <input type="text" id="x_error" value="0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5">
+    </div>
+    <div class="form-group">
+        <label>Y Error:</label>
+        <input type="text" id="y_error" value="0.0005, 0.0005, 0.0005, 0.0005, 0.0005, 0.0005, 0.0005, 0.0005, 0.0005">
+    </div>
+    <div class="form-group">
+        <label>X Step:</label>
+        <input type="number" step="0.001" id="x_step" value="0.01">
+    </div>
+    <div class="form-group">
+        <label>Y Step:</label>
+        <input type="number" step="0.0001" id="y_step" value="0.0001">
+    </div>
+    
+    <button py-click="run_calculation">Calculate</button>
+
+    <h3>Output:</h3>
+    <div id="output">Ready...</div>
+
+    <script type="py">
+        from pyscript import document
+
+        def run_calculation(event):
+            out = document.getElementById("output")
+            out.innerText = "Calculating... Please wait (the browser may briefly freeze during heavy loops).\n\n"
+            
+            try:
+                # 1. Fetch variables from HTML forms
+                x_points = [float(x.strip()) for x in document.getElementById("x_points").value.split(",")]
+                y_points = [float(y.strip()) for y in document.getElementById("y_points").value.split(",")]
+                x_error = [float(e.strip()) for e in document.getElementById("x_error").value.split(",")]
+                y_error = [float(e.strip()) for e in document.getElementById("y_error").value.split(",")]
+                
+                x_step = float(document.getElementById("x_step").value)
+                y_step = float(document.getElementById("y_step").value)
+
+                # 2. Your exact original logic begins here
+                iteration = 0
+
+                lengthx = int((2*x_error[-1])/x_step)
+                lengthy = int((2*y_error[-1])/y_step)
+                total = ((lengthx**2)*(lengthy**2))
+                
+                if total > 1000000:
+                    out.innerText += f"Warning: {total} iterations detected. This may take a minute...\n"
+                if total > 1000000000:
+                    out.innerText += "Refused, too many iterations for a browser session.\n"
+                    return
+
+                largest = 0
+                smallest_intercept = 0
+                smallest = 0
+                largest_intercept = 0
+
+                x_movements = [(lengthx-2*i)*x_step for i in range(lengthx)]
+                y_movements = [(lengthy-2*i)*y_step for i in range(lengthy)]
+
+                def get_grad(x1, x2, y1, y2):
+                    return (y2-y1)/(x2-x1)
+                
+                def get_y_intercept(x, y, gradient):
+                    return (y-gradient*x)
+                
+                def get_y(x, gradient, intercept):
+                    return x*gradient + intercept
+                
+                gradient = get_grad(x_points[0], x_points[-1], y_points[0], y_points[-1])
+                largest = gradient
+                smallest = gradient
+                
+                for k in range(lengthx):
+                    for l in range(lengthx):
+                        for i in range(lengthy):
+                            for j in range(lengthy):
+                                
+                                gradient = get_grad(x_points[0]+x_movements[k],
+                                                    x_points[-1]+x_movements[l],
+                                                    y_points[0]+y_movements[i],
+                                                    y_points[-1]+y_movements[j])
+                                                    
+                                if smallest <= gradient <= largest:
+                                    continue
+                                    
+                                intercept = get_y_intercept(x_points[-1]+x_movements[l],
+                                                            y_points[-1]+y_movements[j], gradient)
+                                valid = True
+                                
+                                for point in range(len(y_points)):
+                                    y = get_y(x_points[point], gradient, intercept)
+                                    if y > y_points[point] + y_error[point] or y < y_points[point] - y_error[point]:
+                                        valid = False
+                                        break
+                                        
+                                if valid:
+                                    if gradient > largest:
+                                        largest = gradient
+                                        smallest_intercept = intercept
+                                    elif gradient < smallest:
+                                        smallest = gradient
+                                        largest_intercept = intercept
+
+                # Output results directly to the webpage instead of console
+                out.innerText += f"The highest gradient was {largest} .With a y intercept of {smallest_intercept}\n"
+                out.innerText += f"The smallest gradient was {smallest} .With a y intercept of {largest_intercept}\n"
+                delta_g = (largest-smallest)/2
+                out.innerText += f"Gradient uncertainty is +- {delta_g}\n"
+
+            except Exception as e:
+                out.innerText += f"\nError: {str(e)}\nCheck that your list sizes match up and contain valid numbers."
+
+    </script>
+</body>
+</html>
